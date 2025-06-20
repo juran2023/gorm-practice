@@ -1,4 +1,4 @@
-module go-select
+module gorm-select
 
 go 1.24
 
