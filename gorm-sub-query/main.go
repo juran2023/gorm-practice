@@ -10,6 +10,7 @@ import (
 	"gorm.io/driver/postgres"
 	"gorm.io/gorm"
 	"gorm.io/gorm/logger"
+	"gorm.io/hints"
 )
 
 type User struct {
@@ -17,6 +18,33 @@ type User struct {
 	Name     string `json:"name" gorm:"default:anonymous"`
 	Age      int    `json:"age" gorm:"default:18"`
 	LockTest string `json:"lock_test"`
+	Role     string `json:"role" gorm:"default:user"`
+}
+
+func AgeGreaterThan(age int) func(db *gorm.DB) *gorm.DB {
+	return func(db *gorm.DB) *gorm.DB {
+		return db.Where("age > ?", age)
+	}
+}
+
+func NameLengthGreaterThan(length int) func(db *gorm.DB) *gorm.DB {
+	return func(db *gorm.DB) *gorm.DB {
+		return db.Where("LENGTH(name) > ?", length)
+	}
+}
+
+func NamesIn(names []string) func(db *gorm.DB) *gorm.DB {
+	return func(db *gorm.DB) *gorm.DB {
+		return db.Where("name IN ?", names)
+	}
+}
+
+// 查询钩子
+func (u *User) AfterFind(tx *gorm.DB) (err error) {
+	if u.Role == "user" {
+		u.Role = "admin"
+	}
+	return
 }
 
 func main() {
@@ -174,5 +202,163 @@ func main() {
 		log.Fatalf("序列化失败: %v", err2)
 	}
 	fmt.Println(string(jsonBytes))
+
+	// 为属性使用 Assign with result
+	user = &User{}
+
+	db.Where(User{Name: "Pain"}).Assign(User{Age: 100}).FirstOrInit(&user)
+	jsonBytes, err2 = json.MarshalIndent(user, "", "  ")
+	if err2 != nil {
+		log.Fatalf("序列化失败: %v", err2)
+	}
+	fmt.Println(string(jsonBytes))
+
+	// 为属性使用 Assign without result
+	user = &User{}
+
+	db.Where(User{Name: "anonymous"}).Assign(User{Age: 100}).FirstOrInit(&user)
+	jsonBytes, err2 = json.MarshalIndent(user, "", "  ")
+	if err2 != nil {
+		log.Fatalf("序列化失败: %v", err2)
+	}
+	fmt.Println(string(jsonBytes))
+
+	// FirstOrCreate
+	// FirstOrCreate 用于获取与特定条件匹配的第一条记录，或者如果没有找到匹配的记录，创建一个新的记录。 这个方法在结构和map条件下都是有效的。
+	db.Where(User{Name: "anonymous", Age: 100}).FirstOrCreate(&user)
+	jsonBytes, err2 = json.MarshalIndent(user, "", "  ")
+	if err2 != nil {
+		log.Fatalf("序列化失败: %v", err2)
+	}
+	fmt.Println(string(jsonBytes))
+
+	// 配合 Attrs 使用 FirstOrCreate with result
+	// 找到结果，忽略Attrs
+	user = &User{}
+	db.Where(User{Name: "anonymous"}).Attrs(User{Age: 1000}).FirstOrCreate(&user)
+	jsonBytes, err2 = json.MarshalIndent(user, "", "  ")
+	if err2 != nil {
+		log.Fatalf("序列化失败: %v", err2)
+	}
+	fmt.Println(string(jsonBytes))
+
+	// 配合 Attrs 使用 FirstOrCreate without result
+	user = &User{}
+	db.Where(User{Name: "kiwi"}).Attrs(User{Age: 999, LockTest: "test"}).FirstOrCreate(&user)
+	jsonBytes, err2 = json.MarshalIndent(user, "", "  ")
+	if err2 != nil {
+		log.Fatalf("序列化失败: %v", err2)
+	}
+	fmt.Println(string(jsonBytes))
+
+	// 配合 Assign 使用 FirstOrCreate 保存
+	user = &User{}
+	db.Where(User{Name: "kikawa"}).Assign(User{Age: 999, LockTest: "test"}).FirstOrCreate(&user)
+	jsonBytes, err2 = json.MarshalIndent(user, "", "  ")
+	if err2 != nil {
+		log.Fatalf("序列化失败: %v", err2)
+	}
+	fmt.Println(string(jsonBytes))
+
+	// 配合 Assign 使用 FirstOrCreate 更新
+	user = &User{}
+	db.Where(User{Name: "仙道"}).Assign(User{Age: 16, LockTest: "test"}).FirstOrCreate(&user)
+	jsonBytes, err2 = json.MarshalIndent(user, "", "  ")
+	if err2 != nil {
+		log.Fatalf("序列化失败: %v", err2)
+	}
+	fmt.Println(string(jsonBytes))
+
+	// 优化器、索引提示
+	user = &User{}
+	db.Clauses(hints.New("MAX_EXECUTION_TIME(10000)")).Where("name = ?", "kikawa").FirstOrInit(&user)
+	jsonBytes, err2 = json.MarshalIndent(user, "", "  ")
+	if err2 != nil {
+		log.Fatalf("序列化失败: %v", err2)
+	}
+	fmt.Println(string(jsonBytes))
+
+	// 索引提示
+	// 对指定索引提供建议
+	// db.Clauses(hints.UseIndex("idx_user_name")).Find(&User{})
+	// SQL: SELECT * FROM `users` USE INDEX (`idx_user_name`)
+
+	// 强制对JOIN操作使用某些索引
+	// db.Clauses(hints.ForceIndex("idx_user_name", "idx_user_id").ForJoin()).Find(&User{})
+	// SQL: SELECT * FROM `users` FORCE INDEX FOR JOIN (`idx_user_name`,`idx_user_id`)
+
+	// 迭代
+	rs, err := db.Model(&User{}).Rows()
+	if err != nil {
+		log.Fatalf("迭代失败: %v", err)
+	}
+	defer rs.Close()
+
+	for rs.Next() {
+		user = &User{}
+		db.ScanRows(rs, user)
+		fmt.Println(user)
+	}
+
+	// FindInBatches
+	// 处理记录，批处理大小为100
+	// result := db.Where("processed = ?", false).FindInBatches(&results, 100, func(tx *gorm.DB, batch int) error {
+	//   for _, result := range results {
+	//     // 对批中的每条记录进行操作
+	//   }
+
+	// 保存对当前批记录的修改
+	//   tx.Save(&results)
+
+	// tx.RowsAffected 提供当前批处理中记录的计数（the count of records in the current batch）
+	// 'batch' 变量表示当前批号（the current batch number）
+
+	// 返回 error 将阻止更多的批处理
+	//   return nil
+	// })
+
+	// result.Error 包含批处理过程中遇到的任何错误
+	// result.RowsAffected 提供跨批处理的所有记录的计数（the count of all processed records across batches）
+
+	// Pluck
+	var names []string
+	db.Model(&User{}).Pluck("name", &names)
+	fmt.Println(names)
+
+	var ages []int
+	db.Model(&User{}).Pluck("age", &ages)
+	fmt.Println(ages)
+
+	db.Model(&User{}).Distinct().Pluck("name", &names)
+	fmt.Println(names)
+
+	db.Model(&User{}).Distinct().Pluck("age", &ages)
+	fmt.Println(ages)
+
+	// Scope
+	db.Scopes(AgeGreaterThan(30), NameLengthGreaterThan(5)).Find(&users)
+	jsonBytes, err2 = json.MarshalIndent(users, "", "  ")
+	if err2 != nil {
+		log.Fatalf("序列化失败: %v", err2)
+	}
+	fmt.Println(string(jsonBytes))
+
+	db.Scopes(NamesIn([]string{"Pain", "knight"})).Find(&users)
+	jsonBytes, err2 = json.MarshalIndent(users, "", "  ")
+	if err2 != nil {
+		log.Fatalf("序列化失败: %v", err2)
+	}
+	fmt.Println(string(jsonBytes))
+
+	// Count
+	var count int64
+	db.Model(&User{}).Count(&count)
+	fmt.Println("count: ", count)
+
+	db.Model(&User{}).Group("CHAR_LENGTH(name)").Count(&count)
+	fmt.Println("char_length count: ", count)
+
+	db.Table("users").Select("COUNT(DISTINCT CHAR_LENGTH(name))").Count(&count)
+	fmt.Println("distinct char_length count: ", count)
 
 }
