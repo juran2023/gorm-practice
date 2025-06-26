@@ -23,12 +23,53 @@ type User struct {
 	Role     string    `json:"role" gorm:"default:user"`
 }
 
-// 更新Hook
-func (u *User) BeforeUpdate(tx *gorm.DB) (err error) {
-	if u.Role == "user" {
-		return errors.New("users are not allowed to update")
+func (u *User) BeforeSave(tx *gorm.DB) (err error) {
+	// 检查创建操作的源是 map 还是 struct
+	if destMap, isMap := tx.Statement.Dest.(map[string]interface{}); isMap {
+		// 如果是 map，我们直接修改 map 中的值，而不是使用 SetColumn
+		if age, ok := destMap["age"].(int); ok {
+			destMap["age"] = age + 20
+		}
+	} else {
+		// 如果是 struct，直接修改实例的字段值
+		u.Age += 20
 	}
-	return
+	return nil
+}
+
+// 更新Hook
+
+func (u *User) BeforeUpdate(tx *gorm.DB) (err error) {
+	if tx.Statement.Changed("role") {
+		return errors.New("role is not allowed to update")
+	}
+
+	if tx.Statement.Changed("name") {
+		// 获取更新后的 name 值
+		newName, ok := tx.Statement.Dest.(map[string]interface{})["name"]
+		if !ok {
+			// 如果不是通过 map 更新，尝试从结构体中获取
+			if u, ok := tx.Statement.Dest.(*User); ok && u != nil {
+				newName = u.Name
+			}
+		}
+
+		// 如果找到了 name 值，添加后缀
+		if newName != nil {
+			nameStr, ok := newName.(string)
+			if ok {
+				// 在 name 值后面添加 "BeforeUpdate" 后缀
+				tx.Statement.SetColumn("name", nameStr+"BeforeUpdate")
+			}
+		}
+	}
+
+	// 如果有任何字段被更新，更新 updated_at 字段
+	if tx.Statement.Changed() {
+		tx.Statement.SetColumn("updated_at", time.Now())
+	}
+
+	return nil
 }
 
 func main() {
@@ -220,6 +261,42 @@ func main() {
 	}
 	fmt.Println(string(jsonBytes))
 
-	//
+	// return a partial user
+	emptyUser = User{}
+	db.Model(&emptyUser).Clauses(clause.Returning{
+		Columns: []clause.Column{
+			{Name: "age"},
+			{Name: "name"},
+		},
+	}).Where("id = ?", 3).Update("age", 111)
+
+	jsonBytes, err2 = json.MarshalIndent(emptyUser, "", "  ")
+	if err2 != nil {
+		log.Fatalf("json.Marshal failed: %v", err2)
+	}
+	fmt.Println(string(jsonBytes))
+
+	// 检查字段是否有变更
+	// GORM provides the Changed method which could be used in Before Update Hooks, it will return whether the field has changed or not.
+
+	// The Changed method only works with methods Update, Updates, and it only checks if the updating value from Update / Updates equals the model value. It will return true if it is changed and not omitted
+
+	// 批量更新name
+	// db.Model(&User{}).Where("id IN ?", []int{611}).Update("name", "马飞飞-batch-update")
+	// db.Session(&gorm.Session{AllowGlobalUpdate: true}).Model(&User{}).Update("name", "President")
+
+	// Create
+	newUser := User{
+		Name: "马飞飞",
+		Age:  100,
+	}
+	db.Create(&newUser)
+	fmt.Println(newUser.ID)
+
+	// Create with map
+	db.Model(&User{}).Create(map[string]interface{}{
+		"name": "马飞飞",
+		"age":  100,
+	})
 
 }
