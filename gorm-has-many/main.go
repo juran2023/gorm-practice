@@ -1,8 +1,6 @@
 package main
 
 import (
-	"encoding/json"
-	"fmt"
 	"log"
 	"os"
 
@@ -45,26 +43,26 @@ func main() {
 
 	db.AutoMigrate(&User{}, &CreditCard{})
 
-	// Create a user
-	user := User{}
-	db.Create(&user)
+	// // Create a user
+	// user := User{Name: "jinzhu"}
+	// db.Create(&user)
 
-	// Create multiple credit cards for the user
-	creditCard1 := CreditCard{Number: "1111-2222-3333-4444", UserID: user.ID}
-	creditCard2 := CreditCard{Number: "5555-6666-7777-8888", UserID: user.ID}
-	db.Create(&creditCard1)
-	db.Create(&creditCard2)
+	// // Create multiple credit cards for the user
+	// creditCard1 := CreditCard{Number: "1111-2222-3333-4444", UserID: user.ID}
+	// creditCard2 := CreditCard{Number: "5555-6666-7777-8888", UserID: user.ID}
+	// db.Create(&creditCard1)
+	// db.Create(&creditCard2)
 
-	// Query the user and preload credit cards
-	var fetchedUser User
-	db.Preload("CreditCards").First(&fetchedUser, user.ID)
+	// // Query the user and preload credit cards
+	// var fetchedUser User
+	// db.Preload("CreditCards").First(&fetchedUser, user.ID)
 
-	// Marshal to JSON and print
-	byteArr, err := json.MarshalIndent(fetchedUser, "", "  ")
-	if err != nil {
-		panic("json.Marshal error")
-	}
-	fmt.Println("Fetched User with Credit Cards:\n", string(byteArr))
+	// // Marshal to JSON and print
+	// byteArr, err := json.MarshalIndent(fetchedUser, "", "  ")
+	// if err != nil {
+	// 	panic("json.Marshal error")
+	// }
+	// fmt.Println("Fetched User with Credit Cards:\n", string(byteArr))
 
 	// 自引用
 	// employee1 := User{
