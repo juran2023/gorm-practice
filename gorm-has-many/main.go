@@ -1,6 +1,7 @@
 package main
 
 import (
+	"encoding/json"
 	"log"
 	"os"
 
@@ -42,6 +43,20 @@ func main() {
 	}
 
 	db.AutoMigrate(&User{}, &CreditCard{})
+
+	// 示例：查询数据并格式化打印JSON
+	var users []User
+	db.Find(&users)
+
+	// 使用json.MarshalIndent来创建格式化的JSON
+	prettyJSON, err := json.MarshalIndent(users, "", "  ")
+	if err != nil {
+		panic("json.Marshal error: " + err.Error())
+	}
+
+	// 打印格式化的JSON字符串
+	log.Println("格式化的JSON输出:")
+	log.Println(string(prettyJSON))
 
 	// // Create a user
 	// user := User{Name: "jinzhu"}
